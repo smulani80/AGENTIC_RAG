@@ -1,0 +1,2 @@
+nohup: ignoring input
+python3: can't open file '/home/ec2-user/nbs-agentic-rag/src/rag_system/src/evaluation/run_ragas_eval.py': [Errno 2] No such file or directory

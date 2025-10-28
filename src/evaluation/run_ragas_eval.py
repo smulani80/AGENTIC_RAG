@@ -147,7 +147,7 @@ async def main():
         context_precision,  # Was the retrieved context precise and not full of noise?
     ]
 
-    # Run the evaluation
+    # Run the evaluation it return an object of type EvaluationResult 
     result = evaluate(
         dataset=eval_dataset,
         metrics=metrics,
@@ -158,6 +158,17 @@ async def main():
     print("-------------------------")
     print(result)
     print("-------------------------")
+
+    #EvaluationResult object has a convenient to_pandas() method that converts the results into a DataFrame
+    result_df = result.to_pandas()
+    result_df.to_csv('run_ragas_eval_output.csv', index=False)
+
+    print("\n🎉 Evaluation Report has been saved as - run_ragas_eval_output.csv !")
+    print("-------------------------")
+    print(result_df)
+    print("-------------------------")
+
+
 
 if __name__ == "__main__":
     # Ragas evaluation uses asyncio, so we run the main function in an event loop

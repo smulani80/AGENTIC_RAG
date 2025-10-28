@@ -15,22 +15,6 @@ from crewai.memory.storage.rag_storage import RAGStorage
 
 from dotenv import load_dotenv
 
-# Load environment variables from a .env file
-load_dotenv()
-
-# Define the data directory for memory storage
-os.environ["CREWAI_STORAGE_DIR"] = "/home/ec2-user/nbs-agentic-rag/CREW_AI_MEM_STORE/"
-os.environ["DATA_DIR"] = "/home/ec2-user/nbs-agentic-rag/CREW_AI_MEM_STORE/DATA/db"
-
-DATA_DIR = os.getenv("DATA_DIR")
-
-ollama_embedder_config = {
-        "provider": "ollama",
-        "config":{
-            "model_name": "nomic-embed-text:v1.5",
-            "url": "http://localhost:11434" # Optional: Specify if Ollama is not running on default URL
-        }
-}
 
 
 def check_for_confidential_info(result: TaskOutput) -> Tuple[bool, Any]:
@@ -43,12 +27,43 @@ def check_for_confidential_info(result: TaskOutput) -> Tuple[bool, Any]:
         content_text = str(result)
         
         # Debug: Log what we actually receive
+        # print(f"DEBUG: Tool received content text as : {repr(content_text)}")
+
+        #if re.search(uae_phone_numbers_pattern, content_text):
+        #    return (False, "Confidential information (UAE_PHONE_NUMBER) detected. Content blocked.")
+        #elif re.search(uae_national_id_pattern, content_text):
+        #    return (False, "Confidential information (UAE_EMIRATES_ID) detected. Content blocked.")
+        #else:
+            # If no sensitive info is found, pass the content through
+        #    return (True, result)
+
+
+        status_msg = "OK"
+		#msg_lst = []
+		
+        content_redacted = False
+		
+        # Debug: Log what we actually receive
         print(f"DEBUG: Tool received content text as : {repr(content_text)}")
 
         if re.search(uae_phone_numbers_pattern, content_text):
-            return (False, "Confidential information (UAE_PHONE_NUMBER) detected. Content blocked.")
-        elif re.search(uae_national_id_pattern, content_text):
-            return (False, "Confidential information (UAE_EMIRATES_ID) detected. Content blocked.")
+            masked_content_text1 = re.sub(uae_phone_numbers_pattern, "****PH.NO****", content_text)
+            content_redacted = True
+            msg1 = "Confidential information (UAE_PHONE_NUMBER) detected. Content redacted by masking it."
+            print(f"DEBUG: {repr(msg1)}")
+            #msg_lst.append(msg1)
+            content_text = masked_content_text1
+			
+        if re.search(uae_national_id_pattern, content_text):
+            masked_content_text2 = re.sub(uae_national_id_pattern, "****UAE.ID****", content_text)
+            content_redacted = True
+            msg2 = "Confidential information (UAE_EMIRATES_ID) detected. Content redacted by masking it."
+            #msg_lst.append(msg2)
+            content_text = masked_content_text2
+			
+        if content_redacted:
+            #status_msg = " | ".join(msg_lst)
+            return (False, content_text)	
         else:
             # If no sensitive info is found, pass the content through
             return (True, result)
@@ -65,6 +80,27 @@ def create_rag_crew(query: str):
     2. Short-term Memory: RAG-based memory for recent context
     3. Entity Memory: Tracks and maintains information about specific entities
     """
+    # Load environment variables from a .env file
+    load_dotenv()
+
+    # Define the data directory for memory storage
+    os.environ["CREWAI_STORAGE_DIR"] = "/home/ec2-user/nbs-agentic-rag/CREW_AI_MEM_STORE/"
+    os.environ["DATA_DIR"] = "/home/ec2-user/nbs-agentic-rag/CREW_AI_MEM_STORE/DATA/db"
+
+    DATA_DIR = os.getenv("DATA_DIR")
+    OLLAMA_BASE_URL_VAR = os.getenv("OLLAMA_BASE_URL")   #if docker then it should use http://host.docker.internal:11434 from .env.docker ELSE http://localhost:11434 from .evn
+
+    ollama_embedder_config = {
+            "provider": "ollama",
+            "config":{
+                "model_name": "nomic-embed-text:v1.5",
+                #"url": "http://localhost:11434" # Optional: Specify if Ollama is not running on default URL
+                #"url": "http://host.docker.internal:11434" # Optional: Specify if Ollama is not running on default URL
+                "url": OLLAMA_BASE_URL_VAR # Optional: Specify if Ollama is not running on default URL
+            }
+    }
+
+    print(f"DEBUG: OLLAMA_BASE_URL_VAR : {repr(OLLAMA_BASE_URL_VAR)}")
 
     # Initialize memory components
     long_term_memory = LongTermMemory(
@@ -89,16 +125,17 @@ def create_rag_crew(query: str):
 
 
     """
-    Creates and configures a two-agent RAG crew to process a query.
+    Creates and configures a three-agent RAG crew to process a query.
     - The Document Researcher finds relevant information.
     - The Insight Synthesizer formulates the final answer based on the retrieved context.
+    - The Redactor Guardrail the final answer received from Synthesizer by excluding Personally Identifiable Information (PII like Name, Passport Number etc).
     """
 
     # Task for the Document Researcher agent
     # This task focuses exclusively on using the tool to find information.
     research_task = Task(
-        description=f"Always find relevant information in the documents for the query: '{query}'.",
-        expected_output="A block of text containing chunks of the most relevant document sections and their source file names.",
+            description=f"First try to fetch highly contextually similar or exact information from the memory for query: '{query}',Otherwise Always find relevant information in the documents for the query: '{query}'.",
+        expected_output="A block of text containing chunks of the most relevant document sections and respective source document file names.",
         agent=document_researcher
     )
 
@@ -117,6 +154,8 @@ Guidelines for response formatting:
 - Use proper formatting (bullet points, numbering, or paragraphs) as appropriate for the content
 - Ensure professional tone and clarity
 - Include precise figures, timeframes, and regulatory references where applicable
+- Always make sure source document information like name,page number is mentioend in the generated answer
+- Don't generate lenghty response with irrelevant information
 
 The response should feel conversational yet authoritative, avoiding repetitive headers unless the content genuinely requires structured breakdown.""",
         agent=insight_synthesizer,
@@ -125,16 +164,18 @@ The response should feel conversational yet authoritative, avoiding repetitive h
         guardrail_max_retries=3, # Limit retry attempts
     )
 
+
     # Create the crew with a sequential process
     rag_crew = Crew(
         agents=[document_researcher, insight_synthesizer],
         tasks=[research_task, synthesis_task],
         process=Process.sequential, # The tasks will be executed one after the other
         embedder=ollama_embedder_config,
-        #memory=True,
-        #long_term_memory=long_term_memory,
-        #short_term_memory=short_term_memory,
-        #entity_memory=entity_memory,
+        memory=True,
+        cache=True,
+        long_term_memory=long_term_memory,
+        short_term_memory=short_term_memory,
+        entity_memory=entity_memory,
         verbose=True,
     )
 

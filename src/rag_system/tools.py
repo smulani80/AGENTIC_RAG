@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 from dotenv import load_dotenv
 from urllib.parse import urlparse
@@ -27,6 +28,7 @@ def warm_up_ollama(base_url: str, model_name: str) -> bool:
     except Exception as e:
         print(f"Warning: Could not warm up Ollama model: {e}")
         return False
+
 
 @tool("Document Retrieval Tool")
 def document_retrieval_tool(query: Union[str, Dict[str, Any]]) -> str:

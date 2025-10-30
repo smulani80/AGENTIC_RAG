@@ -32,7 +32,8 @@ def warm_up_ollama(base_url: str, model_name: str) -> bool:
 
 @tool("Document Retrieval Tool")
 def document_retrieval_tool(query: Union[str, Dict[str, Any]]) -> str:
-    """Retrieves relevant context from a collection of policy and standards documents. Use this tool to search for information in policy documents, manuals, and standards."""
+    """Retrieves relevant context from a collection of policy and standards documents.
+    Use this tool to search for information in policy documents, manuals, and standards."""
     try:
         # Debug: Log what we actually receive
         print(f"DEBUG: Tool received query parameter: {repr(query)}")
@@ -83,7 +84,6 @@ def document_retrieval_tool(query: Union[str, Dict[str, Any]]) -> str:
         # Check for contextual table first, fallback to regular table
 
         contextual_table = "nbs_doc_md_contextual_rag"
-        regular_table = "nbs_doc_md_regualr_embedding_rag"
         
         # Try contextual table first
         try:
@@ -100,19 +100,9 @@ def document_retrieval_tool(query: Union[str, Dict[str, Any]]) -> str:
             )
             print(f"DEBUG: Using contextual table: {contextual_table}")
         except Exception as e:
-            print(f"DEBUG: Contextual table not available, using regular table: {e}")
-            vector_store = PGVectorStore.from_params(
-                host=db_url_parts.hostname,
-                port=db_url_parts.port,
-                database=db_url_parts.path.lstrip('/'),
-                user=db_url_parts.username,
-                password=db_url_parts.password,
-                table_name=regular_table,  # Fallback to regular table
-                embed_dim=768, # Dimension for nomic-embed-text
-                hybrid_search=True,
-                text_search_config="english",
-            )
-
+            print(f"DEBUG: Contextual table not available, Run data_ingestion script first to create vector storage: {e}")
+            return "No relevant vector storage (i.e. contextual table) found."
+ 
         # Initialize the embedding model - use environment variable for base URL to support Docker
         ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         
